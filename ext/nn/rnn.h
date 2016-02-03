@@ -8,8 +8,6 @@ void Init_nn();
 
 static void Init_nn_network();
 
-static void rnn_network_mark(VALUE obj);
-
 static VALUE rnn_network_alloc(VALUE klass);
 
 static VALUE rnn_network_init(VALUE obj);
@@ -26,15 +24,13 @@ static VALUE rnn_network_activate(VALUE obj, VALUE input);
 
 static void Init_nn_layer();
 
-// static void rnn_layer_mark(nn_layer_t* n);
-
 // static VALUE rnn_layer_alloc(VALUE klass);
 
 // static VALUE rnn_layer_init(VALUE obj);
 
 static void rnn_layer_free(nn_layer_t* n);
 
-static void rnn_layer_activate(nn_layer_t* n, float* input, float* output);
+static VALUE rnn_layer_activate(VALUE self, VALUE rb_input);
 
 // #activation
 static VALUE rnn_layer_activation(VALUE layer);
@@ -60,14 +56,6 @@ static void Init_nn_layer_fully_connected();
 
 static VALUE rnn_layer_fully_connected_init(VALUE obj, VALUE activation, VALUE aggregation, VALUE inputCount, VALUE outputCount);
 
-// static void rnn_layer_fully_connected_free(nn_layer_t* n);
-
-// // #activation
-// static VALUE rnn_layer_fully_connected_activation(VALUE obj);
-//
-// // #aggregation
-// static VALUE rnn_layer_fully_connected_aggregation(VALUE obj);
-
 // = NN::Layer::Convolutional ==================================================
 
 static void Init_nn_layer_convolutional();
@@ -76,4 +64,20 @@ static VALUE rnn_layer_convolutional_init(VALUE obj, VALUE activation, VALUE agg
     VALUE inputDimensions, VALUE kernelCount, VALUE kernelPadding,
     VALUE kernelStride, VALUE kernelSize);
 
-// static VALUE rnn_layer_convolutional_kernels(VALUE obj)
+// = NN::Layer::LRN ============================================================
+
+static void Init_nn_layer_lrn();
+
+static VALUE rnn_layer_lrn_init(VALUE self, VALUE inputDimensions, VALUE kernelSize, VALUE k, VALUE alpha, VALUE beta);
+
+static VALUE rnn_layer_lrn_k(VALUE self);
+
+static VALUE rnn_layer_lrn_alpha(VALUE self);
+
+static VALUE rnn_layer_lrn_beta(VALUE self);
+
+// = NN::Layer::SinglyConnected ================================================
+
+static void Init_nn_layer_singly_connected();
+
+static VALUE rnn_layer_singly_connected_init(VALUE self, VALUE activation, VALUE inputCount);

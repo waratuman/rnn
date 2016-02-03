@@ -7,8 +7,10 @@
 static VALUE rb_mNN;
 static VALUE rb_mNN_Layer;
 static VALUE rb_cNN_Network;
+static VALUE rb_cNN_Layer_LRN;
 static VALUE rb_cNN_Layer_Convolutional;
 static VALUE rb_cNN_Layer_FullyConnected;
+static VALUE rb_cNN_Layer_SinglyConnected;
 
 
 void
@@ -33,15 +35,10 @@ void Init_nn_network()
     rb_define_method(rb_cNN_Network, "activate", rnn_network_activate, 1);
 }
 
-static void rnn_network_mark(VALUE obj)
-{
-    
-}
-
 static VALUE rnn_network_alloc(VALUE self)
 {
     nn_network_t* n = nn_network_create(0, NULL);
-    return Data_Wrap_Struct(self, rnn_network_mark, rnn_network_free, n);
+    return Data_Wrap_Struct(self, NULL, rnn_network_free, n);
 }
 
 static VALUE rnn_network_init(VALUE obj)
@@ -103,6 +100,7 @@ rnn_network_activate(VALUE obj, VALUE rb_input)
 
     return rb_output;
 }
+
 // = Layer =====================================================================
 
 void
@@ -111,25 +109,51 @@ Init_nn_layer()
     rb_mNN_Layer = rb_define_module_under(rb_mNN, "Layer");
     Init_nn_layer_fully_connected();
     Init_nn_layer_convolutional();
-}
-
-static void
-rnn_layer_mark(nn_layer_t* n)
-{
-    
+    Init_nn_layer_lrn();
+    Init_nn_layer_singly_connected();
 }
 
 static VALUE
 rnn_layer_alloc(VALUE klass)
 {
     nn_layer_t* l = calloc(1, sizeof(nn_layer_t));
-    return Data_Wrap_Struct(klass, rnn_layer_mark, rnn_layer_free, l);
+    return Data_Wrap_Struct(klass, NULL, rnn_layer_free, l);
 }
 
 static void
 rnn_layer_free(nn_layer_t* l)
 {
     nn_layer_destroy(l);
+}
+
+static VALUE
+rnn_layer_activate(VALUE self, VALUE rb_input)
+{
+    nn_layer_t* l;
+    Data_Get_Struct(self, nn_layer_t, l);
+
+    int inputCount = nn_layer_input_count(l);
+    int outputCount = nn_layer_output_count(l);
+
+    float* input = calloc(inputCount, sizeof(float));
+    float* output = calloc(outputCount, sizeof(float));
+
+    for (int i = 0; i < inputCount; i++) {
+        input[i] = NUM2DBL(rb_ary_entry(rb_input, i));
+    }
+
+    nn_layer_activate(l, input, output);
+
+    VALUE rb_output = rb_ary_new();
+
+    for (int i = 0; i < outputCount; i++) {
+        rb_ary_push(rb_output, DBL2NUM(output[i]));
+    }
+
+    free(input);
+    free(output);
+
+    return rb_output;
 }
 
 static VALUE
@@ -161,6 +185,10 @@ rnn_layer_aggregation(VALUE obj)
 
     if (l->type == NN_CV) {
         return rnn_aggregate_sym(((nn_layer_convolutional_t*)l->_layer)->aggregation);
+    }
+
+    if (l->type == NN_LRN) {
+        return rnn_aggregate_sym(((nn_layer_lrn_t*)l->_layer)->aggregation);
     }
 
     return Qnil;
@@ -237,6 +265,7 @@ Init_nn_layer_fully_connected()
     rb_define_method(rb_cNN_Layer_FullyConnected, "output_size", rnn_layer_output_size, 0);
     rb_define_method(rb_cNN_Layer_FullyConnected, "input_dimesions", rnn_layer_input_dimensions, 0);
     rb_define_method(rb_cNN_Layer_FullyConnected, "output_dimesions", rnn_layer_output_dimensions, 0);
+    rb_define_method(rb_cNN_Layer_FullyConnected, "activate", rnn_layer_activate, 1);
 }
 
 // activation: a symbol or proc / block to execute as the activation function
@@ -271,6 +300,7 @@ Init_nn_layer_convolutional()
     rb_define_method(rb_cNN_Layer_Convolutional, "output_size", rnn_layer_output_size, 0);
     rb_define_method(rb_cNN_Layer_Convolutional, "input_dimesions", rnn_layer_input_dimensions, 0);
     rb_define_method(rb_cNN_Layer_Convolutional, "output_dimesions", rnn_layer_output_dimensions, 0);
+    rb_define_method(rb_cNN_Layer_Convolutional, "activate", rnn_layer_activate, 1);
 }
 
 static VALUE
@@ -306,6 +336,105 @@ rnn_layer_convolutional_init(VALUE obj, VALUE activation, VALUE aggregation,
     free(kt);
     free(kp);
     free(id);
+
+    return Qnil;
+}
+
+// = LRN =======================================================================
+
+static void Init_nn_layer_lrn()
+{
+    rb_cNN_Layer_LRN = rb_define_class_under(rb_mNN_Layer, "LRN", rb_cObject);
+    rb_define_alloc_func(rb_cNN_Layer_LRN, rnn_layer_alloc);
+    rb_define_method(rb_cNN_Layer_LRN, "initialize", rnn_layer_lrn_init, 5);
+    rb_define_method(rb_cNN_Layer_LRN, "aggregation", rnn_layer_aggregation, 0);
+    rb_define_method(rb_cNN_Layer_LRN, "input_size", rnn_layer_input_size, 0);
+    rb_define_method(rb_cNN_Layer_LRN, "output_size", rnn_layer_output_size, 0);
+    rb_define_method(rb_cNN_Layer_LRN, "input_dimesions", rnn_layer_input_dimensions, 0);
+    rb_define_method(rb_cNN_Layer_LRN, "output_dimesions", rnn_layer_output_dimensions, 0);
+    rb_define_method(rb_cNN_Layer_LRN, "activate", rnn_layer_activate, 1);
+    rb_define_method(rb_cNN_Layer_LRN, "k", rnn_layer_lrn_k, 0);
+    rb_define_method(rb_cNN_Layer_LRN, "alpha", rnn_layer_lrn_alpha, 0);
+    rb_define_method(rb_cNN_Layer_LRN, "beta", rnn_layer_lrn_beta, 0);
+}
+
+static VALUE
+rnn_layer_lrn_init(VALUE self, VALUE inputDimensions, VALUE kernelSize, VALUE rb_k, VALUE alpha, VALUE beta)
+{
+    int ic = 1;
+    int dc = RARRAY_LEN(inputDimensions);
+    int* id = calloc(dc, sizeof(int));
+    int* ks = calloc(dc, sizeof(int));
+    float k = NUM2DBL(rb_k);
+    float a = NUM2DBL(alpha);
+    float b = NUM2DBL(beta);
+
+    for (int i = 0; i < dc; i++) {
+        id[i] = NUM2INT(rb_ary_entry(inputDimensions, i));
+        ks[i] = NUM2INT(rb_ary_entry(kernelSize, i));
+        ic *= id[i];
+    }
+
+    nn_layer_t* l;
+    Data_Get_Struct(self, nn_layer_t, l);
+    l->type = NN_LRN;
+    l->_layer = nn_layer_create_lrn(ic, dc, id, ks, k, a, b);
+
+    free(id);
+    free(ks);
+
+    return Qnil;
+}
+
+static VALUE
+rnn_layer_lrn_k(VALUE self)
+{
+    nn_layer_t* l;
+    Data_Get_Struct(self, nn_layer_t, l);
+    return DBL2NUM(((nn_layer_lrn_t*)l->_layer)->k);
+}
+
+static VALUE
+rnn_layer_lrn_alpha(VALUE self)
+{
+    nn_layer_t* l;
+    Data_Get_Struct(self, nn_layer_t, l);
+    return DBL2NUM(((nn_layer_lrn_t*)l->_layer)->alpha);
+}
+
+static VALUE
+rnn_layer_lrn_beta(VALUE self)
+{
+    nn_layer_t* l;
+    Data_Get_Struct(self, nn_layer_t, l);
+    return DBL2NUM(((nn_layer_lrn_t*)l->_layer)->beta);
+}
+
+// = Singly Connected ==========================================================
+
+static void
+Init_nn_layer_singly_connected()
+{
+    rb_cNN_Layer_SinglyConnected = rb_define_class_under(rb_mNN_Layer, "SinglyConnected", rb_cObject);
+    rb_define_alloc_func(rb_cNN_Layer_SinglyConnected, rnn_layer_alloc);
+    rb_define_method(rb_cNN_Layer_SinglyConnected, "initialize", rnn_layer_singly_connected_init, 2);
+    rb_define_method(rb_cNN_Layer_SinglyConnected, "activation", rnn_layer_activation, 0);
+    rb_define_method(rb_cNN_Layer_SinglyConnected, "input_size", rnn_layer_input_size, 0);
+    rb_define_method(rb_cNN_Layer_SinglyConnected, "output_size", rnn_layer_output_size, 0);
+    rb_define_method(rb_cNN_Layer_SinglyConnected, "input_dimesions", rnn_layer_input_dimensions, 0);
+    rb_define_method(rb_cNN_Layer_SinglyConnected, "output_dimesions", rnn_layer_output_dimensions, 0);
+    rb_define_method(rb_cNN_Layer_SinglyConnected, "activate", rnn_layer_activate, 1);
+}
+
+static VALUE rnn_layer_singly_connected_init(VALUE self, VALUE activation, VALUE inputCount)
+{
+    int ic = NUM2INT(inputCount);
+    nn_activation_fn af = rnn_activation_fn(activation);
+
+    nn_layer_t* l;
+    Data_Get_Struct(self, nn_layer_t, l);
+    l->type = NN_SC;
+    l->_layer = nn_layer_create_singly_connected(af, ic);
 
     return Qnil;
 }
